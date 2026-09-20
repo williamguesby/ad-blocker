@@ -16,7 +16,6 @@
     '[data-test-selector="ad-banner-default-text"]'
   ];
 
-
   /* ---------------- FIND AD STATE ---------------- */
 
   function findAdIndicator() {
@@ -36,9 +35,7 @@
       return null;
     }
 
-    const elements = player.querySelectorAll(
-      "span, p, div"
-    );
+    const elements = player.querySelectorAll("span, p, div");
 
     for (const element of elements) {
       const text = element.textContent
@@ -61,7 +58,6 @@
     return null;
   }
 
-
   /* ---------------- FIND VIDEO ---------------- */
 
   function getVideo() {
@@ -76,7 +72,6 @@
     return player.querySelector("video");
   }
 
-
   /* ---------------- HANDLE AD ---------------- */
 
   function handleAd() {
@@ -86,6 +81,9 @@
     if (!indicator) {
       if (adActive) {
         adActive = false;
+
+        document.documentElement.dataset.myAdBlockerTwitchAd =
+          "false";
 
         if (video && originalMuted !== null) {
           video.muted = originalMuted;
@@ -104,6 +102,9 @@
     if (!adActive) {
       adActive = true;
 
+      document.documentElement.dataset.myAdBlockerTwitchAd =
+        "true";
+
       if (video) {
         originalMuted = video.muted;
       }
@@ -118,18 +119,11 @@
     }
 
     /*
-     * Silence the advertisement while we attempt
-     * to move through its media.
+     * Silence the advertisement while attempting to move
+     * through media that Twitch exposes as seekable.
      */
     video.muted = true;
 
-    /*
-     * If Twitch exposes the ad as normal seekable video,
-     * jump close to its end.
-     *
-     * Some Twitch ads will not expose a seekable duration,
-     * in which case this simply does nothing.
-     */
     try {
       if (
         Number.isFinite(video.duration) &&
@@ -150,10 +144,9 @@
         }
       }
     } catch {
-      // Twitch may prevent seeking during an ad.
+      // Twitch may prevent seeking during an advertisement.
     }
   }
-
 
   /* ---------------- REMOVE AD UI ---------------- */
 
@@ -169,20 +162,21 @@
       try {
         document
           .querySelectorAll(selector)
-          .forEach(element => element.remove());
+          .forEach((element) => element.remove());
       } catch {
         // Ignore Twitch DOM changes.
       }
     }
   }
 
-
   /* ---------------- MONITOR PLAYER ---------------- */
 
   let scheduled = false;
 
   function scheduleCheck() {
-    if (scheduled) return;
+    if (scheduled) {
+      return;
+    }
 
     scheduled = true;
 
@@ -194,14 +188,14 @@
     });
   }
 
-
   function start() {
+    document.documentElement.dataset.myAdBlockerTwitchAd =
+      "false";
+
     handleAd();
     removeExtraAdUI();
 
-    const observer = new MutationObserver(
-      scheduleCheck
-    );
+    const observer = new MutationObserver(scheduleCheck);
 
     observer.observe(document.documentElement, {
       childList: true,
@@ -210,17 +204,12 @@
       attributes: true
     });
 
-    /*
-     * Twitch's video state can change without a useful DOM
-     * mutation, so periodically check while the page is open.
-     */
     setInterval(handleAd, 500);
 
     console.info(
       "[My Ad Blocker] Twitch video protection active."
     );
   }
-
 
   if (document.documentElement) {
     start();
