@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "My Ad Blocker",
-  "version": "1.0.0",
-  "description": "Blocks ads, dynamically injected advertising, and unwanted cross-site popups.",
+  "version": "1.1.0",
+  "description": "Blocks ads, dynamically injected advertising, unwanted cross-site popups, and adds YouTube-specific ad protection.",
 
   "permissions": [
     "declarativeNetRequest",
@@ -29,6 +29,14 @@
       "js": ["content.js"],
       "run_at": "document_start",
       "all_frames": true
+    },
+    {
+      "matches": [
+        "https://www.youtube.com/*",
+        "https://youtube.com/*"
+      ],
+      "js": ["youtube.js"],
+      "run_at": "document_start"
     }
   ],
 
