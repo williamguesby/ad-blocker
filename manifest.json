@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "My Ad Blocker",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Blocks ads, dynamically injected advertising, unwanted cross-site popups, redirects, and adds YouTube and Twitch-specific ad protection.",
 
   "permissions": [
@@ -50,6 +50,15 @@
       ],
       "js": ["twitch.js"],
       "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://www.twitch.tv/*",
+        "https://twitch.tv/*"
+      ],
+      "js": ["twitch-player.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
     }
   ],
 
