@@ -1,36 +1,43 @@
+"use strict";
+
+/*
+ * =========================================================
+ * GENERAL AD REMOVAL
+ * =========================================================
+ */
+
 const AD_SELECTORS = [
   ".ad",
   ".ads",
-  ".advert",
   ".advertisement",
+  ".advertising",
   ".ad-container",
   ".ad-wrapper",
+  ".ad-slot",
   ".ad-banner",
-  ".adsbox",
 
   "[data-ad]",
+  "[data-ads]",
   "[data-ad-slot]",
   "[data-ad-client]",
 
-  "ins.adsbygoogle",
-
-  "iframe[src*='doubleclick.net']",
-  "iframe[src*='googlesyndication.com']",
-  "iframe[src*='googleadservices.com']",
-  "iframe[src*='adnxs.com']",
-  "iframe[src*='adsrvr.org']"
+  'iframe[src*="doubleclick.net"]',
+  'iframe[src*="googlesyndication.com"]',
+  'iframe[src*="googleadservices.com"]',
+  'iframe[src*="adnxs.com"]',
+  'iframe[src*="adsrvr.org"]'
 ];
 
 function removeAds(root = document) {
-  if (!root.querySelectorAll) return;
+  if (!root || !root.querySelectorAll) return;
 
   for (const selector of AD_SELECTORS) {
     try {
       root.querySelectorAll(selector).forEach(element => {
         element.remove();
       });
-    } catch (error) {
-      console.debug("Ad blocker selector error:", selector);
+    } catch {
+      // Ignore unusual selector errors.
     }
   }
 }
@@ -44,13 +51,74 @@ function inspectNode(node) {
         node.remove();
         return;
       }
-    } catch {}
+    } catch {
+      // Ignore unusual selector errors.
+    }
   }
 
   removeAds(node);
 }
 
+
+/*
+ * =========================================================
+ * CLICK CLASSIFICATION
+ * =========================================================
+ *
+ * Real links are left alone.
+ *
+ * Clicking something that is NOT a link — such as a video
+ * play/pause/volume control — temporarily tells background.js
+ * to watch for an unrelated popup tab.
+ */
+
+function classifyClick(event) {
+  const target = event.target;
+
+  if (!(target instanceof Element)) {
+    return;
+  }
+
+  /*
+   * If the click happened on a real link, do nothing.
+   * Normal links should continue working normally.
+   */
+  const link = target.closest("a[href]");
+
+  if (link) {
+    return;
+  }
+
+  /*
+   * This was a non-link click.
+   */
+  try {
+    chrome.runtime.sendMessage({
+      type: "non-link-click"
+    });
+  } catch {
+    // Ignore extension-context errors during navigation.
+  }
+}
+
+document.addEventListener(
+  "pointerdown",
+  classifyClick,
+  true
+);
+
+
+/*
+ * =========================================================
+ * DYNAMIC AD MONITORING
+ * =========================================================
+ */
+
 function startObserver() {
+  if (!document.documentElement) {
+    return;
+  }
+
   removeAds();
 
   const observer = new MutationObserver(mutations => {
@@ -67,9 +135,26 @@ function startObserver() {
   });
 }
 
-// Inject our popup/redirect protection into the actual webpage.
+if (document.documentElement) {
+  startObserver();
+} else {
+  document.addEventListener(
+    "DOMContentLoaded",
+    startObserver,
+    { once: true }
+  );
+}
+
+
+/*
+ * =========================================================
+ * PAGE-LEVEL POPUP GUARD
+ * =========================================================
+ */
+
 function injectPageGuard() {
   const script = document.createElement("script");
+
   script.src = chrome.runtime.getURL("page-guard.js");
 
   script.onload = () => {
@@ -81,10 +166,4 @@ function injectPageGuard() {
 
 injectPageGuard();
 
-if (document.documentElement) {
-  startObserver();
-} else {
-  document.addEventListener("DOMContentLoaded", startObserver, {
-    once: true
-  });
-}
+console.info("[My Ad Blocker] Content protection active.");
