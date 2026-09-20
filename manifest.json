@@ -1,0 +1,45 @@
+{
+  "manifest_version": 3,
+  "name": "My Ad Blocker",
+  "version": "1.0.0",
+  "description": "Blocks ads, dynamically injected advertising, and unwanted cross-site popups.",
+
+  "permissions": [
+    "declarativeNetRequest",
+    "storage"
+  ],
+
+  "host_permissions": [
+    "<all_urls>"
+  ],
+
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "ad_rules",
+        "enabled": true,
+        "path": "rules.json"
+      }
+    ]
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_start",
+      "all_frames": true
+    }
+  ],
+
+  "web_accessible_resources": [
+    {
+      "resources": ["page-guard.js"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+
+  "action": {
+    "default_popup": "popup.html"
+  }
+}
