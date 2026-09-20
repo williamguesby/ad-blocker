@@ -2,10 +2,9 @@
   "use strict";
 
   const originalOpen = window.open.bind(window);
-
   const INTENT_WINDOW = 1500;
 
-  let allowedExternalNavigation = {
+  let intentionalExternalLink = {
     time: 0,
     hostname: ""
   };
@@ -18,17 +17,17 @@
     }
   }
 
-  function sameSite(hostA, hostB) {
-    if (!hostA || !hostB) return false;
+  function sameSite(a, b) {
+    if (!a || !b) return false;
 
     return (
-      hostA === hostB ||
-      hostA.endsWith("." + hostB) ||
-      hostB.endsWith("." + hostA)
+      a === b ||
+      a.endsWith("." + b) ||
+      b.endsWith("." + a)
     );
   }
 
-  function rememberIntentionalLink(link) {
+  function recordIntent(link) {
     if (!link?.href) return;
 
     const destination = getHostname(link.href);
@@ -37,82 +36,98 @@
       destination &&
       !sameSite(destination, location.hostname)
     ) {
-      allowedExternalNavigation = {
+      intentionalExternalLink = {
         time: Date.now(),
         hostname: destination
       };
     }
   }
 
-  function wasIntentional(destination) {
+  function hasIntent(destination) {
     return (
-      Date.now() - allowedExternalNavigation.time < INTENT_WINDOW &&
-      sameSite(destination, allowedExternalNavigation.hostname)
+      Date.now() - intentionalExternalLink.time < INTENT_WINDOW &&
+      sameSite(
+        destination,
+        intentionalExternalLink.hostname
+      )
     );
   }
 
   /*
-   * Watch clicks BEFORE the website handles them.
+   * Detect what the user ACTUALLY clicked.
    *
-   * Only a real <a href> counts as permission to navigate
-   * to an unrelated website.
-   *
-   * Clicking a video, pause button, div, image, etc.
-   * does NOT give permission.
+   * A genuine <a href> can authorize external navigation.
+   * Clicking a video control, button, div, overlay, etc.
+   * does not.
    */
   document.addEventListener(
     "click",
     event => {
       const link = event.target.closest?.("a[href]");
 
-      if (link) {
-        rememberIntentionalLink(link);
+      if (!link) {
+        intentionalExternalLink = {
+          time: 0,
+          hostname: ""
+        };
+
+        return;
       }
+
+      recordIntent(link);
     },
     true
   );
 
-  /*
-   * Also account for middle-clicking a legitimate link.
-   */
   document.addEventListener(
     "auxclick",
     event => {
       const link = event.target.closest?.("a[href]");
 
       if (link) {
-        rememberIntentionalLink(link);
+        recordIntent(link);
       }
     },
     true
   );
 
   /*
-   * Block JavaScript-created unrelated tabs/windows.
+   * Protect against window.open().
    */
   window.open = function(url, target, features) {
     if (!url) {
-      return originalOpen(url, target, features);
+      /*
+       * Some scripts create an empty tab first and navigate
+       * it afterward. Blocking this is safer for our purposes.
+       */
+      console.warn(
+        "[My Ad Blocker] Blocked empty scripted popup."
+      );
+
+      return null;
     }
 
     const destination = getHostname(url);
 
     if (!destination) {
-      return originalOpen(url, target, features);
+      console.warn(
+        "[My Ad Blocker] Blocked invalid popup:",
+        url
+      );
+
+      return null;
     }
 
-    // Navigation within the same site is okay.
     if (sameSite(destination, location.hostname)) {
       return originalOpen(url, target, features);
     }
 
-    // User intentionally clicked a real external link.
-    if (wasIntentional(destination)) {
+    if (hasIntent(destination)) {
       return originalOpen(url, target, features);
     }
 
     console.warn(
-      "[My Ad Blocker] Blocked cross-site popup:",
+      "[My Ad Blocker] Blocked unrelated popup:",
       url
     );
 
@@ -120,8 +135,41 @@
   };
 
   /*
-   * Catch dynamically-created links that attempt to behave
-   * like invisible popup/redirect overlays.
+   * Catch synthetic/programmatic clicks on links.
+   *
+   * Websites sometimes create an <a target="_blank"> and
+   * trigger .click() after the user interacts with something
+   * unrelated, such as the video player.
+   */
+  const originalAnchorClick =
+    HTMLAnchorElement.prototype.click;
+
+  HTMLAnchorElement.prototype.click = function() {
+    const destination = getHostname(this.href);
+
+    if (!destination) {
+      return;
+    }
+
+    if (sameSite(destination, location.hostname)) {
+      return originalAnchorClick.call(this);
+    }
+
+    if (hasIntent(destination)) {
+      return originalAnchorClick.call(this);
+    }
+
+    console.warn(
+      "[My Ad Blocker] Blocked scripted external link:",
+      this.href
+    );
+
+    return;
+  };
+
+  /*
+   * Catch suspicious real click events where the page has
+   * placed an external link over an unrelated control.
    */
   document.addEventListener(
     "click",
@@ -134,23 +182,30 @@
 
       if (!destination) return;
 
-      /*
-       * Don't interfere with same-site links.
-       */
       if (sameSite(destination, location.hostname)) {
         return;
       }
 
       /*
-       * This is still a real link the user clicked, so allow it.
-       * The important distinction is that clicking a video control
-       * itself should NOT authorize an unrelated popup.
+       * A real visible external link is allowed.
+       * The earlier capture handler records that intent.
        */
+      if (hasIntent(destination)) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopImmediatePropagation();
+
+      console.warn(
+        "[My Ad Blocker] Blocked external navigation:",
+        link.href
+      );
     },
     true
   );
 
   console.info(
-    "[My Ad Blocker] Redirect protection active."
+    "[My Ad Blocker] Enhanced popup protection active."
   );
 })();
