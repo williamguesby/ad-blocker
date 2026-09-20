@@ -3,63 +3,24 @@
 
   /*
    * =====================================================
-   * TWITCH AD DETECTOR
+   * TWITCH VIDEO AD PROTECTION
    * =====================================================
-   *
-   * Detects Twitch's player ad state, including the
-   * "Ad" / countdown UI that appears during video ads.
    */
 
   let adActive = false;
+  let originalMuted = null;
 
   const AD_SELECTORS = [
     '[data-a-target="video-ad-label"]',
     '[data-test-selector="sad-overlay"]',
-    '[data-test-selector="ad-banner-default-text"]',
-    '[class*="ad-banner"]',
-    '[class*="adBanner"]'
+    '[data-test-selector="ad-banner-default-text"]'
   ];
 
 
-  /* ---------------- PAGE AD REMOVAL ---------------- */
-
-  function removePageAds(root = document) {
-    if (!root || !root.querySelectorAll) return;
-
-    for (const selector of AD_SELECTORS) {
-      try {
-        root.querySelectorAll(selector).forEach(element => {
-          /*
-           * Don't remove the video-ad label yet because
-           * we use it to detect the ad state.
-           */
-          if (
-            element.matches(
-              '[data-a-target="video-ad-label"]'
-            )
-          ) {
-            continue;
-          }
-
-          element.remove();
-        });
-      } catch {
-        // Ignore selector errors.
-      }
-    }
-  }
-
-
-  /* ---------------- AD DETECTION ---------------- */
+  /* ---------------- FIND AD STATE ---------------- */
 
   function findAdIndicator() {
-    const selectors = [
-      '[data-a-target="video-ad-label"]',
-      '[data-test-selector="sad-overlay"]',
-      '[data-test-selector="ad-banner-default-text"]'
-    ];
-
-    for (const selector of selectors) {
+    for (const selector of AD_SELECTORS) {
       const element = document.querySelector(selector);
 
       if (element) {
@@ -67,11 +28,6 @@
       }
     }
 
-    /*
-     * Fallback:
-     * Search small player text elements for Twitch's
-     * visible advertisement/countdown text.
-     */
     const player = document.querySelector(
       '[data-a-target="video-player"]'
     );
@@ -106,37 +62,122 @@
   }
 
 
-  function checkAdState() {
-    const indicator = findAdIndicator();
-    const currentlyShowingAd = Boolean(indicator);
+  /* ---------------- FIND VIDEO ---------------- */
 
-    if (currentlyShowingAd && !adActive) {
-      adActive = true;
+  function getVideo() {
+    const player = document.querySelector(
+      '[data-a-target="video-player"]'
+    );
 
-      document.documentElement.dataset
-        .myAdBlockerTwitchAd = "true";
-
-      console.info(
-        "[My Ad Blocker] Twitch video ad started."
-      );
+    if (!player) {
+      return document.querySelector("video");
     }
 
-    if (!currentlyShowingAd && adActive) {
-      adActive = false;
-
-      delete document.documentElement.dataset
-        .myAdBlockerTwitchAd;
-
-      console.info(
-        "[My Ad Blocker] Twitch video ad ended."
-      );
-    }
-
-    return currentlyShowingAd;
+    return player.querySelector("video");
   }
 
 
-  /* ---------------- PAGE MONITOR ---------------- */
+  /* ---------------- HANDLE AD ---------------- */
+
+  function handleAd() {
+    const indicator = findAdIndicator();
+    const video = getVideo();
+
+    if (!indicator) {
+      if (adActive) {
+        adActive = false;
+
+        if (video && originalMuted !== null) {
+          video.muted = originalMuted;
+        }
+
+        originalMuted = null;
+
+        console.info(
+          "[My Ad Blocker] Twitch ad ended."
+        );
+      }
+
+      return;
+    }
+
+    if (!adActive) {
+      adActive = true;
+
+      if (video) {
+        originalMuted = video.muted;
+      }
+
+      console.info(
+        "[My Ad Blocker] Twitch video ad detected."
+      );
+    }
+
+    if (!video) {
+      return;
+    }
+
+    /*
+     * Silence the advertisement while we attempt
+     * to move through its media.
+     */
+    video.muted = true;
+
+    /*
+     * If Twitch exposes the ad as normal seekable video,
+     * jump close to its end.
+     *
+     * Some Twitch ads will not expose a seekable duration,
+     * in which case this simply does nothing.
+     */
+    try {
+      if (
+        Number.isFinite(video.duration) &&
+        video.duration > 1 &&
+        video.seekable.length > 0
+      ) {
+        const end =
+          video.seekable.end(video.seekable.length - 1);
+
+        if (
+          Number.isFinite(end) &&
+          end > video.currentTime
+        ) {
+          video.currentTime = Math.max(
+            video.currentTime,
+            end - 0.05
+          );
+        }
+      }
+    } catch {
+      // Twitch may prevent seeking during an ad.
+    }
+  }
+
+
+  /* ---------------- REMOVE AD UI ---------------- */
+
+  function removeExtraAdUI() {
+    const selectors = [
+      '[data-test-selector="sad-overlay"]',
+      '[data-test-selector="ad-banner-default-text"]',
+      '[class*="ad-banner"]',
+      '[class*="adBanner"]'
+    ];
+
+    for (const selector of selectors) {
+      try {
+        document
+          .querySelectorAll(selector)
+          .forEach(element => element.remove());
+      } catch {
+        // Ignore Twitch DOM changes.
+      }
+    }
+  }
+
+
+  /* ---------------- MONITOR PLAYER ---------------- */
 
   let scheduled = false;
 
@@ -148,15 +189,15 @@
     requestAnimationFrame(() => {
       scheduled = false;
 
-      checkAdState();
-      removePageAds();
+      handleAd();
+      removeExtraAdUI();
     });
   }
 
 
   function start() {
-    checkAdState();
-    removePageAds();
+    handleAd();
+    removeExtraAdUI();
 
     const observer = new MutationObserver(
       scheduleCheck
@@ -165,11 +206,18 @@
     observer.observe(document.documentElement, {
       childList: true,
       subtree: true,
-      characterData: true
+      characterData: true,
+      attributes: true
     });
 
+    /*
+     * Twitch's video state can change without a useful DOM
+     * mutation, so periodically check while the page is open.
+     */
+    setInterval(handleAd, 500);
+
     console.info(
-      "[My Ad Blocker] Twitch ad detector active."
+      "[My Ad Blocker] Twitch video protection active."
     );
   }
 
