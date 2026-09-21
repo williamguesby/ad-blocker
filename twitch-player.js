@@ -11,10 +11,11 @@
    * Watches:
    * - Twitch ad state
    * - Web Worker creation
-   * - Unique Worker function names
-   * - STRUCTURE of arguments passed to "load"
+   * - Unique Worker functions
+   * - Structure of "load" arguments
+   * - Safe classification of LOAD strings
    *
-   * Does NOT modify Worker messages or Twitch playback.
+   * Does NOT modify Twitch playback or Worker messages.
    */
 
   if (window.__myAdBlockerTwitchPlayerLoaded) {
@@ -60,51 +61,100 @@
   }
 
   /* =====================================================
-   * SAFE ARGUMENT DESCRIPTION
+   * SAFE STRING CLASSIFICATION
    * ===================================================== */
 
-  function describeValue(value) {
-    if (value === null) {
-      return "null";
-    }
+  function classifyString(value) {
+    const lower = value.toLowerCase();
+    const trimmed = value.trim();
 
-    if (Array.isArray(value)) {
-      return `array(length=${value.length})`;
-    }
+    let looksLikeJSON = false;
 
-    if (ArrayBuffer.isView(value)) {
-      return "typed-array";
-    }
-
-    if (value instanceof ArrayBuffer) {
-      return "array-buffer";
-    }
-
-    if (typeof value === "object") {
+    if (
+      trimmed.startsWith("{") ||
+      trimmed.startsWith("[")
+    ) {
       try {
-        const keys = Object.keys(value)
-          .slice(0, 15);
-
-        if (keys.length === 0) {
-          return "object(no enumerable keys)";
-        }
-
-        return `object(keys=${keys.join(",")})`;
+        JSON.parse(trimmed);
+        looksLikeJSON = true;
       } catch {
-        return "object";
+        looksLikeJSON = false;
       }
     }
 
-    if (typeof value === "string") {
-      /*
-       * Deliberately do NOT print the string itself.
-       * It could contain a stream URL or temporary token.
-       */
-      return `string(length=${value.length})`;
-    }
+    return {
+      length: value.length,
 
-    return typeof value;
+      startsWithHTTP:
+        lower.startsWith("http://") ||
+        lower.startsWith("https://"),
+
+      containsM3U8:
+        lower.includes(".m3u8"),
+
+      containsTTVNW:
+        lower.includes("ttvnw"),
+
+      containsUsher:
+        lower.includes("usher"),
+
+      containsAmazon:
+        lower.includes("amazon"),
+
+      containsIVS:
+        lower.includes("ivs"),
+
+      looksLikeJSON
+    };
   }
+
+  function logStringClassification(
+    workerId,
+    index,
+    value
+  ) {
+    const info = classifyString(value);
+
+    console.info(
+      `[My Ad Blocker] Worker #${workerId} LOAD arg ${index} classification:`
+    );
+
+    console.info(
+      `[My Ad Blocker]   length: ${info.length}`
+    );
+
+    console.info(
+      `[My Ad Blocker]   starts with HTTP: ${info.startsWithHTTP}`
+    );
+
+    console.info(
+      `[My Ad Blocker]   contains .m3u8: ${info.containsM3U8}`
+    );
+
+    console.info(
+      `[My Ad Blocker]   contains ttvnw: ${info.containsTTVNW}`
+    );
+
+    console.info(
+      `[My Ad Blocker]   contains usher: ${info.containsUsher}`
+    );
+
+    console.info(
+      `[My Ad Blocker]   contains amazon: ${info.containsAmazon}`
+    );
+
+    console.info(
+      `[My Ad Blocker]   contains ivs: ${info.containsIVS}`
+    );
+
+    console.info(
+      `[My Ad Blocker]   looks like JSON: ${info.looksLikeJSON}`
+    );
+  }
+
+  /* =====================================================
+   * LOAD DIAGNOSTICS
+   * ===================================================== */
 
   function inspectLoadArguments(workerId, args) {
     console.info(
@@ -113,7 +163,7 @@
 
     if (!Array.isArray(args)) {
       console.info(
-        `[My Ad Blocker] Worker #${workerId} LOAD args container: ${describeValue(args)}`
+        `[My Ad Blocker] Worker #${workerId} LOAD args are not an array.`
       );
 
       return;
@@ -124,8 +174,50 @@
     );
 
     args.forEach((value, index) => {
+      if (typeof value === "string") {
+        logStringClassification(
+          workerId,
+          index,
+          value
+        );
+
+        return;
+      }
+
+      if (value === null) {
+        console.info(
+          `[My Ad Blocker] Worker #${workerId} LOAD arg ${index}: null`
+        );
+
+        return;
+      }
+
+      if (Array.isArray(value)) {
+        console.info(
+          `[My Ad Blocker] Worker #${workerId} LOAD arg ${index}: array`
+        );
+
+        return;
+      }
+
+      if (typeof value === "object") {
+        let keys = [];
+
+        try {
+          keys = Object.keys(value).slice(0, 15);
+        } catch {
+          // Diagnostic only.
+        }
+
+        console.info(
+          `[My Ad Blocker] Worker #${workerId} LOAD arg ${index}: object keys = ${keys.join(", ")}`
+        );
+
+        return;
+      }
+
       console.info(
-        `[My Ad Blocker] Worker #${workerId} LOAD arg ${index}: ${describeValue(value)}`
+        `[My Ad Blocker] Worker #${workerId} LOAD arg ${index}: ${typeof value}`
       );
     });
   }
@@ -169,12 +261,6 @@
       );
     }
 
-    /*
-     * "load" is the only function whose argument
-     * structure we inspect.
-     *
-     * Values themselves are NOT printed.
-     */
     if (functionName === "load") {
       inspectLoadArguments(
         workerId,
@@ -287,7 +373,7 @@
     );
 
     console.info(
-      "[My Ad Blocker] LOAD diagnostics active."
+      "[My Ad Blocker] LOAD string-classification diagnostics active."
     );
   }
 
