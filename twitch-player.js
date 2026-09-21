@@ -10,9 +10,9 @@
    *
    * Watches:
    * - Twitch ad state
-   * - Page-level HLS requests
+   * - Page-level playlist requests
    * - Web Worker creation
-   * - Worker message activity
+   * - UNIQUE Worker function names
    *
    * Does NOT alter Twitch's stream or Worker traffic.
    */
@@ -25,6 +25,8 @@
 
   let adActive = false;
   let workerNumber = 0;
+
+  const observedFunctions = new Map();
 
   /* =====================================================
    * AD STATE
@@ -129,38 +131,38 @@
 
   const OriginalWorker = window.Worker;
 
-  function describeMessage(data) {
-    if (data === null) {
-      return "null";
+  function getWorkerFunctionSet(workerId) {
+    if (!observedFunctions.has(workerId)) {
+      observedFunctions.set(
+        workerId,
+        new Set()
+      );
     }
 
-    if (ArrayBuffer.isView(data)) {
-      return "typed-array";
+    return observedFunctions.get(workerId);
+  }
+
+  function observeFunction(workerId, data) {
+    if (
+      !data ||
+      typeof data !== "object" ||
+      typeof data.funcName !== "string"
+    ) {
+      return;
     }
 
-    if (data instanceof ArrayBuffer) {
-      return "array-buffer";
+    const functions =
+      getWorkerFunctionSet(workerId);
+
+    if (functions.has(data.funcName)) {
+      return;
     }
 
-    if (typeof data === "object") {
-      try {
-        const keys = Object.keys(data)
-          .slice(0, 8);
+    functions.add(data.funcName);
 
-        if (keys.length > 0) {
-          return (
-            "object keys: " +
-            keys.join(", ")
-          );
-        }
-      } catch {
-        return "object";
-      }
-
-      return "object";
-    }
-
-    return typeof data;
+    console.info(
+      `[My Ad Blocker] Worker #${workerId} function observed: ${data.funcName}`
+    );
   }
 
   if (typeof OriginalWorker === "function") {
@@ -203,12 +205,6 @@
           const worker =
             Reflect.construct(target, args);
 
-          /*
-           * Observe messages sent FROM the page TO the Worker.
-           * We log only the data type/key names rather than
-           * dumping the full message contents.
-           */
-
           const originalPostMessage =
             worker.postMessage.bind(worker);
 
@@ -217,9 +213,7 @@
             ...rest
           ) {
             try {
-              console.info(
-                `[My Ad Blocker] Worker #${id} received page message — ${describeMessage(data)}`
-              );
+              observeFunction(id, data);
             } catch {
               // Diagnostic only.
             }
@@ -229,23 +223,6 @@
               ...rest
             );
           };
-
-          /*
-           * Observe messages sent FROM the Worker TO the page.
-           */
-
-          worker.addEventListener(
-            "message",
-            (event) => {
-              try {
-                console.info(
-                  `[My Ad Blocker] Worker #${id} sent page message — ${describeMessage(event.data)}`
-                );
-              } catch {
-                // Diagnostic only.
-              }
-            }
-          );
 
           return worker;
         }
@@ -296,7 +273,7 @@
     );
 
     console.info(
-      "[My Ad Blocker] Twitch Worker-message diagnostics active."
+      "[My Ad Blocker] Unique Worker-function diagnostics active."
     );
   }
 
