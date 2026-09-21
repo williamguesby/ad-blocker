@@ -6,16 +6,15 @@
    * MY AD BLOCKER — TWITCH PLAYER MODULE
    * =====================================================
    *
-   * Runs in Twitch's MAIN page context.
+   * DIAGNOSTIC VERSION
    *
-   * Current jobs:
-   * 1. Receive the ad-state signal from twitch.js.
-   * 2. Watch page-level Fetch/XHR for HLS playlists.
-   * 3. Detect Web Workers created by Twitch.
+   * Watches:
+   * - Twitch ad state
+   * - Page-level HLS requests
+   * - Web Worker creation
+   * - Worker message activity
    *
-   * DIAGNOSTIC ONLY:
-   * This version does not modify Twitch's stream,
-   * playlist, or workers.
+   * Does NOT alter Twitch's stream or Worker traffic.
    */
 
   if (window.__myAdBlockerTwitchPlayerLoaded) {
@@ -25,6 +24,7 @@
   window.__myAdBlockerTwitchPlayerLoaded = true;
 
   let adActive = false;
+  let workerNumber = 0;
 
   /* =====================================================
    * AD STATE
@@ -72,10 +72,6 @@
     );
   }
 
-  /*
-   * Watch page-level fetch().
-   */
-
   const originalFetch = window.fetch;
 
   if (typeof originalFetch === "function") {
@@ -100,10 +96,6 @@
       return originalFetch.apply(this, args);
     };
   }
-
-  /*
-   * Watch page-level XMLHttpRequest.
-   */
 
   const originalXHROpen =
     XMLHttpRequest.prototype.open;
@@ -132,65 +124,130 @@
   };
 
   /* =====================================================
-   * WEB WORKER DIAGNOSTICS
+   * WORKER DIAGNOSTICS
    * ===================================================== */
 
   const OriginalWorker = window.Worker;
+
+  function describeMessage(data) {
+    if (data === null) {
+      return "null";
+    }
+
+    if (ArrayBuffer.isView(data)) {
+      return "typed-array";
+    }
+
+    if (data instanceof ArrayBuffer) {
+      return "array-buffer";
+    }
+
+    if (typeof data === "object") {
+      try {
+        const keys = Object.keys(data)
+          .slice(0, 8);
+
+        if (keys.length > 0) {
+          return (
+            "object keys: " +
+            keys.join(", ")
+          );
+        }
+      } catch {
+        return "object";
+      }
+
+      return "object";
+    }
+
+    return typeof data;
+  }
 
   if (typeof OriginalWorker === "function") {
     const WorkerProxy = new Proxy(
       OriginalWorker,
       {
         construct(target, args) {
+          workerNumber += 1;
+
+          const id = workerNumber;
+
+          let workerType = "unknown";
+
           try {
-            const workerSource = String(args[0]);
+            const source =
+              String(args[0]).toLowerCase();
 
-            /*
-             * Don't print the complete URL because Twitch
-             * may use temporary or session-specific data.
-             */
-
-            let workerType = "unknown";
-
-            if (
-              workerSource
-                .toLowerCase()
-                .includes("amazon")
-            ) {
+            if (source.includes("amazon")) {
               workerType = "amazon";
             }
 
-            if (
-              workerSource
-                .toLowerCase()
-                .includes("ivs")
-            ) {
+            if (source.includes("ivs")) {
               workerType = "amazon-ivs";
             }
 
-            if (
-              workerSource.startsWith("blob:")
-            ) {
+            if (source.startsWith("blob:")) {
               workerType =
                 workerType === "unknown"
                   ? "blob"
                   : workerType + "-blob";
             }
-
-            console.info(
-              "[My Ad Blocker] Twitch Worker created:",
-              workerType
-            );
           } catch {
-            console.info(
-              "[My Ad Blocker] Twitch Worker created."
-            );
+            workerType = "unknown";
           }
 
-          return Reflect.construct(
-            target,
-            args
+          console.info(
+            `[My Ad Blocker] Twitch Worker #${id} created: ${workerType}`
           );
+
+          const worker =
+            Reflect.construct(target, args);
+
+          /*
+           * Observe messages sent FROM the page TO the Worker.
+           * We log only the data type/key names rather than
+           * dumping the full message contents.
+           */
+
+          const originalPostMessage =
+            worker.postMessage.bind(worker);
+
+          worker.postMessage = function (
+            data,
+            ...rest
+          ) {
+            try {
+              console.info(
+                `[My Ad Blocker] Worker #${id} received page message — ${describeMessage(data)}`
+              );
+            } catch {
+              // Diagnostic only.
+            }
+
+            return originalPostMessage(
+              data,
+              ...rest
+            );
+          };
+
+          /*
+           * Observe messages sent FROM the Worker TO the page.
+           */
+
+          worker.addEventListener(
+            "message",
+            (event) => {
+              try {
+                console.info(
+                  `[My Ad Blocker] Worker #${id} sent page message — ${describeMessage(event.data)}`
+                );
+              } catch {
+                // Diagnostic only.
+              }
+            }
+          );
+
+          return worker;
         }
       }
     );
@@ -236,6 +293,10 @@
 
     console.info(
       "[My Ad Blocker] Twitch playlist diagnostics active."
+    );
+
+    console.info(
+      "[My Ad Blocker] Twitch Worker-message diagnostics active."
     );
   }
 
