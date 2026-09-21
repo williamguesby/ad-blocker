@@ -10,11 +10,11 @@
    *
    * Watches:
    * - Twitch ad state
-   * - Page-level playlist requests
    * - Web Worker creation
-   * - UNIQUE Worker function names
+   * - Unique Worker function names
+   * - STRUCTURE of arguments passed to "load"
    *
-   * Does NOT alter Twitch's stream or Worker traffic.
+   * Does NOT modify Worker messages or Twitch playback.
    */
 
   if (window.__myAdBlockerTwitchPlayerLoaded) {
@@ -60,70 +60,75 @@
   }
 
   /* =====================================================
-   * PLAYLIST DIAGNOSTICS
+   * SAFE ARGUMENT DESCRIPTION
    * ===================================================== */
 
-  function looksLikePlaylist(url) {
-    if (typeof url !== "string") {
-      return false;
+  function describeValue(value) {
+    if (value === null) {
+      return "null";
     }
 
-    return (
-      url.includes(".m3u8") ||
-      url.includes("usher.ttvnw.net")
-    );
-  }
+    if (Array.isArray(value)) {
+      return `array(length=${value.length})`;
+    }
 
-  const originalFetch = window.fetch;
+    if (ArrayBuffer.isView(value)) {
+      return "typed-array";
+    }
 
-  if (typeof originalFetch === "function") {
-    window.fetch = function (...args) {
+    if (value instanceof ArrayBuffer) {
+      return "array-buffer";
+    }
+
+    if (typeof value === "object") {
       try {
-        const input = args[0];
+        const keys = Object.keys(value)
+          .slice(0, 15);
 
-        const url =
-          typeof input === "string"
-            ? input
-            : input?.url || "";
-
-        if (looksLikePlaylist(url)) {
-          console.info(
-            "[My Ad Blocker] Twitch playlist observed through fetch."
-          );
+        if (keys.length === 0) {
+          return "object(no enumerable keys)";
         }
+
+        return `object(keys=${keys.join(",")})`;
       } catch {
-        // Diagnostic only.
+        return "object";
       }
-
-      return originalFetch.apply(this, args);
-    };
-  }
-
-  const originalXHROpen =
-    XMLHttpRequest.prototype.open;
-
-  XMLHttpRequest.prototype.open = function (
-    method,
-    url,
-    ...rest
-  ) {
-    try {
-      if (looksLikePlaylist(String(url))) {
-        console.info(
-          "[My Ad Blocker] Twitch playlist observed through XHR."
-        );
-      }
-    } catch {
-      // Diagnostic only.
     }
 
-    return originalXHROpen.call(
-      this,
-      method,
-      url,
-      ...rest
+    if (typeof value === "string") {
+      /*
+       * Deliberately do NOT print the string itself.
+       * It could contain a stream URL or temporary token.
+       */
+      return `string(length=${value.length})`;
+    }
+
+    return typeof value;
+  }
+
+  function inspectLoadArguments(workerId, args) {
+    console.info(
+      `[My Ad Blocker] Worker #${workerId} LOAD called.`
     );
-  };
+
+    if (!Array.isArray(args)) {
+      console.info(
+        `[My Ad Blocker] Worker #${workerId} LOAD args container: ${describeValue(args)}`
+      );
+
+      return;
+    }
+
+    console.info(
+      `[My Ad Blocker] Worker #${workerId} LOAD argument count: ${args.length}`
+    );
+
+    args.forEach((value, index) => {
+      console.info(
+        `[My Ad Blocker] Worker #${workerId} LOAD arg ${index}: ${describeValue(value)}`
+      );
+    });
+  }
 
   /* =====================================================
    * WORKER DIAGNOSTICS
@@ -151,18 +156,31 @@
       return;
     }
 
+    const functionName = data.funcName;
+
     const functions =
       getWorkerFunctionSet(workerId);
 
-    if (functions.has(data.funcName)) {
-      return;
+    if (!functions.has(functionName)) {
+      functions.add(functionName);
+
+      console.info(
+        `[My Ad Blocker] Worker #${workerId} function observed: ${functionName}`
+      );
     }
 
-    functions.add(data.funcName);
-
-    console.info(
-      `[My Ad Blocker] Worker #${workerId} function observed: ${data.funcName}`
-    );
+    /*
+     * "load" is the only function whose argument
+     * structure we inspect.
+     *
+     * Values themselves are NOT printed.
+     */
+    if (functionName === "load") {
+      inspectLoadArguments(
+        workerId,
+        data.args
+      );
+    }
   }
 
   if (typeof OriginalWorker === "function") {
@@ -269,11 +287,7 @@
     );
 
     console.info(
-      "[My Ad Blocker] Twitch playlist diagnostics active."
-    );
-
-    console.info(
-      "[My Ad Blocker] Unique Worker-function diagnostics active."
+      "[My Ad Blocker] LOAD diagnostics active."
     );
   }
 
