@@ -8,12 +8,14 @@
    *
    * Runs in Twitch's MAIN page context.
    *
-   * Current purpose:
+   * Current jobs:
    * 1. Receive the ad-state signal from twitch.js.
-   * 2. Check whether Twitch's playlist requests are visible
-   *    through the page's normal Fetch/XHR APIs.
+   * 2. Watch page-level Fetch/XHR for HLS playlists.
+   * 3. Detect Web Workers created by Twitch.
    *
-   * This version DOES NOT modify network responses.
+   * DIAGNOSTIC ONLY:
+   * This version does not modify Twitch's stream,
+   * playlist, or workers.
    */
 
   if (window.__myAdBlockerTwitchPlayerLoaded) {
@@ -24,7 +26,9 @@
 
   let adActive = false;
 
-  /* ---------------- AD STATE ---------------- */
+  /* =====================================================
+   * AD STATE
+   * ===================================================== */
 
   function setAdState(active) {
     if (active === adActive) {
@@ -46,13 +50,16 @@
 
   function readAdState() {
     const active =
-      document.documentElement.dataset.myAdBlockerTwitchAd ===
-      "true";
+      document.documentElement
+        .dataset
+        .myAdBlockerTwitchAd === "true";
 
     setAdState(active);
   }
 
-  /* ---------------- PLAYLIST DIAGNOSTICS ---------------- */
+  /* =====================================================
+   * PLAYLIST DIAGNOSTICS
+   * ===================================================== */
 
   function looksLikePlaylist(url) {
     if (typeof url !== "string") {
@@ -66,11 +73,9 @@
   }
 
   /*
-   * Watch window.fetch().
-   *
-   * We deliberately do NOT print the complete Twitch URL
-   * because playlist URLs can contain temporary tokens.
+   * Watch page-level fetch().
    */
+
   const originalFetch = window.fetch;
 
   if (typeof originalFetch === "function") {
@@ -89,7 +94,7 @@
           );
         }
       } catch {
-        // Diagnostic only. Never interfere with playback.
+        // Diagnostic only.
       }
 
       return originalFetch.apply(this, args);
@@ -97,8 +102,9 @@
   }
 
   /*
-   * Watch XMLHttpRequest as well.
+   * Watch page-level XMLHttpRequest.
    */
+
   const originalXHROpen =
     XMLHttpRequest.prototype.open;
 
@@ -125,19 +131,104 @@
     );
   };
 
-  /* ---------------- START ---------------- */
+  /* =====================================================
+   * WEB WORKER DIAGNOSTICS
+   * ===================================================== */
+
+  const OriginalWorker = window.Worker;
+
+  if (typeof OriginalWorker === "function") {
+    const WorkerProxy = new Proxy(
+      OriginalWorker,
+      {
+        construct(target, args) {
+          try {
+            const workerSource = String(args[0]);
+
+            /*
+             * Don't print the complete URL because Twitch
+             * may use temporary or session-specific data.
+             */
+
+            let workerType = "unknown";
+
+            if (
+              workerSource
+                .toLowerCase()
+                .includes("amazon")
+            ) {
+              workerType = "amazon";
+            }
+
+            if (
+              workerSource
+                .toLowerCase()
+                .includes("ivs")
+            ) {
+              workerType = "amazon-ivs";
+            }
+
+            if (
+              workerSource.startsWith("blob:")
+            ) {
+              workerType =
+                workerType === "unknown"
+                  ? "blob"
+                  : workerType + "-blob";
+            }
+
+            console.info(
+              "[My Ad Blocker] Twitch Worker created:",
+              workerType
+            );
+          } catch {
+            console.info(
+              "[My Ad Blocker] Twitch Worker created."
+            );
+          }
+
+          return Reflect.construct(
+            target,
+            args
+          );
+        }
+      }
+    );
+
+    Object.defineProperty(
+      WorkerProxy,
+      "name",
+      {
+        value: "Worker"
+      }
+    );
+
+    window.Worker = WorkerProxy;
+
+    console.info(
+      "[My Ad Blocker] Twitch Worker diagnostics active."
+    );
+  }
+
+  /* =====================================================
+   * START
+   * ===================================================== */
 
   function start() {
     readAdState();
 
-    const observer = new MutationObserver(readAdState);
+    const observer =
+      new MutationObserver(readAdState);
 
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: [
-        "data-my-ad-blocker-twitch-ad"
-      ]
-    });
+    observer.observe(
+      document.documentElement,
+      {
+        attributes: true,
+        attributeFilter: [
+          "data-my-ad-blocker-twitch-ad"
+        ]
+      }
+    );
 
     console.info(
       "[My Ad Blocker] Twitch player module active."
