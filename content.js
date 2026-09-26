@@ -16,11 +16,33 @@ const AD_SELECTORS = [
   ".ad-slot",
   ".ad-banner",
 
+  // Additional common ad containers
+  ".ad-box",
+  ".adblock",
+  ".ad-placement",
+  ".ad-unit",
+  ".adsbox",
+  ".adsbygoogle",
+  ".banner-ad",
+  ".sidebar-ad",
+  ".sidebar-ads",
+  ".video-ad",
+  ".sponsor-ad",
+
+  // Common ad-related IDs/classes
+  '[id^="ad-"]',
+  '[id^="ads-"]',
+  '[id*="-ad-"]',
+  '[class*=" ad-"]',
+  '[class^="ad-"]',
+
+  // Common ad data attributes
   "[data-ad]",
   "[data-ads]",
   "[data-ad-slot]",
   "[data-ad-client]",
 
+  // Known advertising iframe sources
   'iframe[src*="doubleclick.net"]',
   'iframe[src*="googlesyndication.com"]',
   'iframe[src*="googleadservices.com"]',
