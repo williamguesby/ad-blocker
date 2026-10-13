@@ -1,3 +1,4 @@
+
 [
   {
     "id": 1,
@@ -77,6 +78,35 @@
         "image",
         "sub_frame",
         "xmlhttprequest"
+      ]
+    }
+  },
+  {
+    "id": 6,
+    "priority": 1,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "urlFilter": "/pagead.js",
+      "initiatorDomains": [
+        "adblock.turtlecute.org"
+      ],
+      "resourceTypes": [
+        "script"
+      ]
+    }
+  },
+  {
+    "id": 7,
+    "priority": 1,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "urlFilter": "/widget/ads.",
+      "resourceTypes": [
+        "script"
       ]
     }
   }
