@@ -1,23 +1,20 @@
+
 {
   "manifest_version": 3,
   "name": "My Ad Blocker",
-  "version": "1.4.0",
-  "description": "Blocks ads, dynamically injected advertising, unwanted cross-site popups, redirects, and adds YouTube and Twitch-specific ad protection.",
-
+  "version": "1.5.0",
+  "description": "Blocks ads, unwanted popups, redirects and intrusive advertising overlays.",
   "permissions": [
     "declarativeNetRequest",
     "storage",
     "tabs"
   ],
-
   "host_permissions": [
     "<all_urls>"
   ],
-
   "background": {
     "service_worker": "background.js"
   },
-
   "declarative_net_request": {
     "rule_resources": [
       {
@@ -27,13 +24,21 @@
       }
     ]
   },
-
   "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["page-guard.js"],
+      "run_at": "document_start",
+      "all_frames": true,
+      "match_origin_as_fallback": true,
+      "world": "MAIN"
+    },
     {
       "matches": ["<all_urls>"],
       "js": ["content.js"],
       "run_at": "document_start",
-      "all_frames": true
+      "all_frames": true,
+      "match_origin_as_fallback": true
     },
     {
       "matches": [
@@ -61,14 +66,6 @@
       "world": "MAIN"
     }
   ],
-
-  "web_accessible_resources": [
-    {
-      "resources": ["page-guard.js"],
-      "matches": ["<all_urls>"]
-    }
-  ],
-
   "action": {
     "default_popup": "popup.html"
   }
