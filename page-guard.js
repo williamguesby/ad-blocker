@@ -1,211 +1,106 @@
+
 (() => {
   "use strict";
 
   const originalOpen = window.open.bind(window);
-  const INTENT_WINDOW = 1500;
+  const originalClick = HTMLAnchorElement.prototype.click;
 
-  let intentionalExternalLink = {
-    time: 0,
-    hostname: ""
-  };
+  let intent = null;
 
-  function getHostname(url) {
+  function getURL(value) {
     try {
-      return new URL(url, location.href).hostname;
+      return new URL(value, location.href);
     } catch {
-      return "";
+      return null;
     }
   }
 
-  function sameSite(a, b) {
-    if (!a || !b) return false;
+  function suspiciousLink(link) {
+    const style = getComputedStyle(link);
+    const rect = link.getBoundingClientRect();
 
     return (
-      a === b ||
-      a.endsWith("." + b) ||
-      b.endsWith("." + a)
-    );
-  }
-
-  function recordIntent(link) {
-    if (!link?.href) return;
-
-    const destination = getHostname(link.href);
-
-    if (
-      destination &&
-      !sameSite(destination, location.hostname)
-    ) {
-      intentionalExternalLink = {
-        time: Date.now(),
-        hostname: destination
-      };
-    }
-  }
-
-  function hasIntent(destination) {
-    return (
-      Date.now() - intentionalExternalLink.time < INTENT_WINDOW &&
-      sameSite(
-        destination,
-        intentionalExternalLink.hostname
+      Number(style.opacity) < 0.1 ||
+      style.visibility === "hidden" ||
+      style.display === "none" ||
+      rect.width === 0 ||
+      rect.height === 0 ||
+      (
+        ["fixed", "absolute"].includes(style.position) &&
+        rect.width > innerWidth * 0.8 &&
+        rect.height > innerHeight * 0.8
       )
     );
   }
 
-  /*
-   * Detect what the user ACTUALLY clicked.
-   *
-   * A genuine <a href> can authorize external navigation.
-   * Clicking a video control, button, div, overlay, etc.
-   * does not.
-   */
-  document.addEventListener(
-    "click",
-    event => {
-      const link = event.target.closest?.("a[href]");
+  function recordIntent(event) {
+    if (!event.isTrusted) return;
 
-      if (!link) {
-        intentionalExternalLink = {
-          time: 0,
-          hostname: ""
-        };
+    intent = null;
 
-        return;
-      }
+    const link = event.target?.closest?.("a[href]");
 
-      recordIntent(link);
-    },
-    true
-  );
+    if (!link) return;
 
-  document.addEventListener(
-    "auxclick",
-    event => {
-      const link = event.target.closest?.("a[href]");
-
-      if (link) {
-        recordIntent(link);
-      }
-    },
-    true
-  );
-
-  /*
-   * Protect against window.open().
-   */
-  window.open = function(url, target, features) {
-    if (!url) {
-      /*
-       * Some scripts create an empty tab first and navigate
-       * it afterward. Blocking this is safer for our purposes.
-       */
-      console.warn(
-        "[My Ad Blocker] Blocked empty scripted popup."
-      );
-
-      return null;
-    }
-
-    const destination = getHostname(url);
-
-    if (!destination) {
-      console.warn(
-        "[My Ad Blocker] Blocked invalid popup:",
-        url
-      );
-
-      return null;
-    }
-
-    if (sameSite(destination, location.hostname)) {
-      return originalOpen(url, target, features);
-    }
-
-    if (hasIntent(destination)) {
-      return originalOpen(url, target, features);
-    }
-
-    console.warn(
-      "[My Ad Blocker] Blocked unrelated popup:",
-      url
-    );
-
-    return null;
-  };
-
-  /*
-   * Catch synthetic/programmatic clicks on links.
-   *
-   * Websites sometimes create an <a target="_blank"> and
-   * trigger .click() after the user interacts with something
-   * unrelated, such as the video player.
-   */
-  const originalAnchorClick =
-    HTMLAnchorElement.prototype.click;
-
-  HTMLAnchorElement.prototype.click = function() {
-    const destination = getHostname(this.href);
-
-    if (!destination) {
+    if (suspiciousLink(link)) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
       return;
     }
 
-    if (sameSite(destination, location.hostname)) {
-      return originalAnchorClick.call(this);
-    }
+    const url = getURL(link.href);
 
-    if (hasIntent(destination)) {
-      return originalAnchorClick.call(this);
+    if (url) {
+      intent = {
+        url: url.href,
+        time: Date.now()
+      };
     }
+  }
 
-    console.warn(
-      "[My Ad Blocker] Blocked scripted external link:",
-      this.href
+  function authorized(url) {
+    return (
+      intent &&
+      Date.now() - intent.time < 1200 &&
+      url.href === intent.url
     );
+  }
 
-    return;
+  document.addEventListener("click", recordIntent, true);
+  document.addEventListener("auxclick", recordIntent, true);
+
+  window.open = function(url, target, features) {
+    if (!url) return null;
+
+    const destination = getURL(url);
+
+    if (!destination || !authorized(destination)) {
+      console.debug("[PageGuard] Blocked scripted popup");
+      return null;
+    }
+
+    intent = null;
+
+    return originalOpen(url, target, features);
   };
 
-  /*
-   * Catch suspicious real click events where the page has
-   * placed an external link over an unrelated control.
-   */
-  document.addEventListener(
-    "click",
-    event => {
-      const link = event.target.closest?.("a[href]");
+  HTMLAnchorElement.prototype.click = function() {
+    const destination = getURL(this.href);
 
-      if (!link) return;
+    if (!destination) return;
 
-      const destination = getHostname(link.href);
-
-      if (!destination) return;
-
-      if (sameSite(destination, location.hostname)) {
+    if (
+      this.target === "_blank" ||
+      destination.origin !== location.origin
+    ) {
+      if (!authorized(destination)) {
+        console.debug("[PageGuard] Blocked scripted link");
         return;
       }
+    }
 
-      /*
-       * A real visible external link is allowed.
-       * The earlier capture handler records that intent.
-       */
-      if (hasIntent(destination)) {
-        return;
-      }
+    return originalClick.call(this);
+  };
 
-      event.preventDefault();
-      event.stopImmediatePropagation();
-
-      console.warn(
-        "[My Ad Blocker] Blocked external navigation:",
-        link.href
-      );
-    },
-    true
-  );
-
-  console.info(
-    "[My Ad Blocker] Enhanced popup protection active."
-  );
+  console.info("[PageGuard] Popup protection active.");
 })();
