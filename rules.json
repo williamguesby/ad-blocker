@@ -3,111 +3,63 @@
   {
     "id": 1,
     "priority": 1,
-    "action": {
-      "type": "block"
-    },
+    "action": { "type": "block" },
     "condition": {
-      "urlFilter": "||doubleclick.net^",
+      "requestDomains": [
+        "doubleclick.net",
+        "googlesyndication.com",
+        "googleadservices.com",
+        "adnxs.com",
+        "adsrvr.org",
+        "popads.net",
+        "popcash.net",
+        "propellerads.com",
+        "adsterra.com",
+        "exoclick.com",
+        "trafficjunky.net",
+        "hilltopads.com",
+        "clickadu.com",
+        "adform.net",
+        "adroll.com",
+        "smartadserver.com",
+        "rubiconproject.com",
+        "pubmatic.com",
+        "openx.net",
+        "criteo.com",
+        "criteo.net",
+        "adservice.google.com"
+      ],
       "resourceTypes": [
+        "main_frame",
+        "sub_frame",
         "script",
         "image",
-        "sub_frame",
         "xmlhttprequest",
-        "media"
-      ]
-    }
-  },
-  {
-    "id": 2,
-    "priority": 1,
-    "action": {
-      "type": "block"
-    },
-    "condition": {
-      "urlFilter": "||googlesyndication.com^",
-      "resourceTypes": [
-        "script",
-        "image",
-        "sub_frame",
-        "xmlhttprequest"
-      ]
-    }
-  },
-  {
-    "id": 3,
-    "priority": 1,
-    "action": {
-      "type": "block"
-    },
-    "condition": {
-      "urlFilter": "||googleadservices.com^",
-      "resourceTypes": [
-        "script",
-        "image",
-        "sub_frame",
-        "xmlhttprequest"
-      ]
-    }
-  },
-  {
-    "id": 4,
-    "priority": 1,
-    "action": {
-      "type": "block"
-    },
-    "condition": {
-      "urlFilter": "||adnxs.com^",
-      "resourceTypes": [
-        "script",
-        "image",
-        "sub_frame",
-        "xmlhttprequest"
-      ]
-    }
-  },
-  {
-    "id": 5,
-    "priority": 1,
-    "action": {
-      "type": "block"
-    },
-    "condition": {
-      "urlFilter": "||adsrvr.org^",
-      "resourceTypes": [
-        "script",
-        "image",
-        "sub_frame",
-        "xmlhttprequest"
+        "media",
+        "ping",
+        "other"
       ]
     }
   },
   {
     "id": 6,
     "priority": 1,
-    "action": {
-      "type": "block"
-    },
+    "action": { "type": "block" },
     "condition": {
       "urlFilter": "/pagead.js",
       "initiatorDomains": [
         "adblock.turtlecute.org"
       ],
-      "resourceTypes": [
-        "script"
-      ]
+      "resourceTypes": ["script"]
     }
   },
   {
     "id": 7,
     "priority": 1,
-    "action": {
-      "type": "block"
-    },
+    "action": { "type": "block" },
     "condition": {
       "urlFilter": "/widget/ads.",
-      "resourceTypes": [
-        "script"
-      ]
+      "resourceTypes": ["script"]
     }
   }
 ]
