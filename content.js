@@ -1,10 +1,5 @@
-"use strict";
 
-/*
- * =========================================================
- * GENERAL AD REMOVAL
- * =========================================================
- */
+"use strict";
 
 const AD_SELECTORS = [
   ".ad",
@@ -15,177 +10,123 @@ const AD_SELECTORS = [
   ".ad-wrapper",
   ".ad-slot",
   ".ad-banner",
-
-  // Additional common ad containers
-  ".ad-box",
-  ".adblock",
-  ".ad-placement",
-  ".ad-unit",
-  ".adsbox",
-  ".adsbygoogle",
-  ".banner-ad",
-  ".sidebar-ad",
-  ".sidebar-ads",
-  ".video-ad",
-  ".sponsor-ad",
-
-  // Common ad-related IDs/classes
-  '[id^="ad-"]',
-  '[id^="ads-"]',
-  '[id*="-ad-"]',
-  '[class*=" ad-"]',
-  '[class^="ad-"]',
-
-  // Common ad data attributes
+  ".ad-overlay",
+  ".advertisement-overlay",
+  ".popup-ad",
+  ".video-ad-overlay",
   "[data-ad]",
   "[data-ads]",
   "[data-ad-slot]",
   "[data-ad-client]",
-
-  // Known advertising iframe sources
   'iframe[src*="doubleclick.net"]',
   'iframe[src*="googlesyndication.com"]',
   'iframe[src*="googleadservices.com"]',
   'iframe[src*="adnxs.com"]',
   'iframe[src*="adsrvr.org"]'
-];
+].join(",");
 
-function removeAds(root = document) {
-  if (!root || !root.querySelectorAll) return;
-
-  for (const selector of AD_SELECTORS) {
-    try {
-      root.querySelectorAll(selector).forEach(element => {
-        element.remove();
-      });
-    } catch {
-      // Ignore unusual selector errors.
-    }
-  }
-}
-
-function inspectNode(node) {
-  if (!(node instanceof Element)) return;
-
-  for (const selector of AD_SELECTORS) {
-    try {
-      if (node.matches(selector)) {
-        node.remove();
-        return;
-      }
-    } catch {
-      // Ignore unusual selector errors.
-    }
-  }
-
-  removeAds(node);
-}
-
-
-/*
- * =========================================================
- * CLICK CLASSIFICATION
- * =========================================================
- *
- * Real links are left alone.
- *
- * Clicking something that is NOT a link — such as a video
- * play/pause/volume control — temporarily tells background.js
- * to watch for an unrelated popup tab.
- */
-
-function classifyClick(event) {
-  const target = event.target;
-
-  if (!(target instanceof Element)) {
-    return;
-  }
-
-  /*
-   * If the click happened on a real link, do nothing.
-   * Normal links should continue working normally.
-   */
-  const link = target.closest("a[href]");
-
-  if (link) {
-    return;
-  }
-
-  /*
-   * This was a non-link click.
-   */
-  try {
-    chrome.runtime.sendMessage({
-      type: "non-link-click"
-    });
-  } catch {
-    // Ignore extension-context errors during navigation.
-  }
-}
-
-document.addEventListener(
-  "pointerdown",
-  classifyClick,
-  true
-);
-
-
-/*
- * =========================================================
- * DYNAMIC AD MONITORING
- * =========================================================
- */
-
-function startObserver() {
-  if (!document.documentElement) {
-    return;
-  }
-
-  removeAds();
-
-  const observer = new MutationObserver(mutations => {
-    for (const mutation of mutations) {
-      for (const node of mutation.addedNodes) {
-        inspectNode(node);
-      }
+function removeAds() {
+  document.querySelectorAll(AD_SELECTORS).forEach(element => {
+    if (!element.querySelector("video")) {
+      element.remove();
     }
   });
+}
+
+function removeOverlays() {
+  const elements = document.querySelectorAll(
+    'div, aside, section, [role="dialog"]'
+  );
+
+  for (const element of elements) {
+    if (element.querySelector("video, input, form")) {
+      continue;
+    }
+
+    const style = getComputedStyle(element);
+
+    if (
+      style.position !== "fixed" &&
+      style.position !== "absolute"
+    ) {
+      continue;
+    }
+
+    const rect = element.getBoundingClientRect();
+
+    if (rect.width < 100 || rect.height < 60) {
+      continue;
+    }
+
+    const text = element.textContent.trim();
+
+    if (text.length > 400) continue;
+
+    const adText =
+      /\badvertisement\b|\bsponsored ad\b|\bclose ad\b|\bskip ad\b/i.test(text);
+
+    const hasClose = element.querySelector(
+      'button, [aria-label*="close" i], [class*="close" i]'
+    );
+
+    if (adText && hasClose) {
+      element.remove();
+    }
+  }
+}
+
+document.addEventListener("pointerdown", event => {
+  if (!event.isTrusted) return;
+
+  const link = event.target?.closest?.("a[href]");
+
+  try {
+    chrome.runtime.sendMessage({
+      type: "page-click",
+      destination: link?.href || null
+    }).catch(() => {});
+  } catch {}
+}, true);
+
+let scheduled = false;
+
+function scan() {
+  removeAds();
+  removeOverlays();
+}
+
+function scheduleScan() {
+  if (scheduled) return;
+
+  scheduled = true;
+
+  setTimeout(() => {
+    scheduled = false;
+    scan();
+  }, 150);
+}
+
+function start() {
+  scan();
+
+  const observer = new MutationObserver(scheduleScan);
 
   observer.observe(document.documentElement, {
     childList: true,
-    subtree: true
+    subtree: true,
+    attributes: true,
+    attributeFilter: ["class", "style", "src"]
   });
+
+  setInterval(scan, 2000);
 }
 
 if (document.documentElement) {
-  startObserver();
+  start();
 } else {
-  document.addEventListener(
-    "DOMContentLoaded",
-    startObserver,
-    { once: true }
-  );
+  document.addEventListener("DOMContentLoaded", start, {
+    once: true
+  });
 }
 
-
-/*
- * =========================================================
- * PAGE-LEVEL POPUP GUARD
- * =========================================================
- */
-
-function injectPageGuard() {
-  const script = document.createElement("script");
-
-  script.src = chrome.runtime.getURL("page-guard.js");
-
-  script.onload = () => {
-    script.remove();
-  };
-
-  (document.head || document.documentElement).appendChild(script);
-}
-
-injectPageGuard();
-
-console.info("[My Ad Blocker] Content protection active.");
+console.info("[PageGuard] Dynamic ad protection active.");
